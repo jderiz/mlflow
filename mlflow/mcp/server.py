@@ -14,18 +14,21 @@ from mlflow.ai_commands.ai_command_utils import get_command_body, list_commands
 from mlflow.cli.scorers import commands as scorers_cli
 from mlflow.cli.traces import commands as traces_cli
 from mlflow.mcp.decorator import get_mcp_tool_name
+from mlflow.mcp.tracking import experiment_commands as tracking_experiment_commands
+from mlflow.mcp.tracking import run_commands as tracking_run_commands
+from mlflow.store.artifact import cli as artifact_cli
 
 # Environment variable to control which tool categories are enabled
 # Supported values:
 #   - "genai": traces, scorers, experiments, and runs tools (default)
 #   - "ml": experiments, runs, models and deployments tools
 #   - "all": all available tools
-#   - Comma-separated list: "traces,scorers,experiments,runs,models,deployments"
+#   - Comma-separated list: "traces,scorers,experiments,runs,models,deployments,artifacts"
 MLFLOW_MCP_TOOLS = os.environ.get("MLFLOW_MCP_TOOLS", "genai")
 
 # Tool category mappings
 _GENAI_TOOLS = {"traces", "scorers", "experiments", "runs"}
-_ML_TOOLS = {"models", "deployments", "experiments", "runs"}
+_ML_TOOLS = {"models", "deployments", "experiments", "runs", "artifacts"}
 _ALL_TOOLS = _GENAI_TOOLS | _ML_TOOLS
 
 if TYPE_CHECKING:
@@ -221,13 +224,19 @@ def create_mcp() -> "FastMCP":
     if _is_tool_enabled("scorers"):
         tools.extend(_collect_tools(scorers_cli.commands))
 
-    # Experiment tracking tools (genai)
+    # Experiment tracking tools (genai + classical ML metadata)
     if _is_tool_enabled("experiments"):
         tools.extend(_collect_tools(mlflow.experiments.commands.commands))
+        tools.extend(_collect_tools(tracking_experiment_commands.commands))
 
-    # Run management tools (genai)
+    # Run management tools (genai + classical ML search/metadata)
     if _is_tool_enabled("runs"):
         tools.extend(_collect_tools(mlflow.runs.commands.commands))
+        tools.extend(_collect_tools(tracking_run_commands.commands))
+
+    # Artifact tools (ml)
+    if _is_tool_enabled("artifacts"):
+        tools.extend(_collect_tools(artifact_cli.commands.commands))
 
     # Model serving tools (ml)
     if _is_tool_enabled("models"):

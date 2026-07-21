@@ -12,11 +12,18 @@ from mlflow.entities import RunStatus, ViewType
 from mlflow.environment_variables import MLFLOW_EXPERIMENT_ID, MLFLOW_EXPERIMENT_NAME
 from mlflow.exceptions import MlflowException
 from mlflow.mcp.decorator import mlflow_mcp
+from mlflow.store.tracking import SEARCH_MAX_RESULTS_DEFAULT
 from mlflow.tracking import _get_store
 from mlflow.utils.string_utils import _create_table
 from mlflow.utils.time import conv_longdate_to_str
 
 RUN_ID = click.option("--run-id", type=click.STRING, required=True)
+
+
+def _validate_max_results(ctx, param, value):
+    if value is not None and value < 0:
+        raise click.BadParameter("max-results must be a non-negative integer")
+    return value
 
 
 @click.group("runs")
@@ -43,18 +50,50 @@ def commands():
     help="Select view type for list experiments. Valid view types are "
     "'active_only' (default), 'deleted_only', and 'all'.",
 )
-def list_run(experiment_id: str, view: str) -> None:
+@click.option(
+    "--max-results",
+    type=click.INT,
+    default=SEARCH_MAX_RESULTS_DEFAULT,
+    callback=_validate_max_results,
+    help=(
+        f"Maximum number of runs to return per page (default: {SEARCH_MAX_RESULTS_DEFAULT}). "
+        "Use --page-token to fetch additional pages when more runs exist."
+    ),
+)
+@click.option(
+    "--page-token",
+    type=click.STRING,
+    default=None,
+    help="Pagination token from a previous list_runs response.",
+)
+def list_run(
+    experiment_id: str,
+    view: str,
+    max_results: int,
+    page_token: str | None,
+) -> None:
     """
-    List all runs of the specified experiment in the configured tracking server.
+    List runs of the specified experiment in the configured tracking server.
+
+    Default page size is 1000 runs. When a next page token is printed, call again
+    with --page-token to retrieve additional runs.
     """
     store = _get_store()
     view_type = ViewType.from_string(view) if view else ViewType.ACTIVE_ONLY
-    runs = store.search_runs([experiment_id], None, view_type)
+    runs = store.search_runs(
+        [experiment_id],
+        None,
+        view_type,
+        max_results=max_results,
+        page_token=page_token,
+    )
     table = []
     for run in runs:
         run_name = run.info.run_name or ""
         table.append([conv_longdate_to_str(run.info.start_time), run_name, run.info.run_id])
     click.echo(_create_table(sorted(table, reverse=True), headers=["Date", "Name", "ID"]))
+    if runs.token:
+        click.echo(f"\nNext page token: {runs.token}")
 
 
 @commands.command("delete")
